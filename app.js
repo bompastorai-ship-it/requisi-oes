@@ -7,7 +7,7 @@ const fmt=v=>v?String(v).split("-").reverse().join("/"):"—";
 let checks=[],history=[],exams=[],selected=[],modalSelected=[],editing=null,profile={},user=null;
 const toast=msg=>{const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),3500)};
 const uid=()=>crypto.randomUUID();
-function goto(p){document.querySelectorAll(".view").forEach(e=>e.classList.toggle("visible",e.id==="view-"+p));document.querySelectorAll("[data-view]").forEach(e=>e.classList.toggle("active",e.dataset.view===p));$("breadcrumb").textContent=({home:"Visão geral",request:"Nova requisição",checks:"Meus check-ups",history:"Histórico",settings:"Configurações"})[p];if(p==="checks")renderChecks();if(p==="history")renderHistory();if(p==="home")stats();if(p==="request")preview()}
+function goto(p){document.querySelectorAll(".view").forEach(e=>e.classList.toggle("visible",e.id==="view-"+p));document.querySelectorAll("[data-view]").forEach(e=>e.classList.toggle("active",e.dataset.view===p));$("breadcrumb").textContent=({home:"Visão geral",request:"Nova requisição",checks:"Meus check-ups",history:"Histórico",settings:"Configurações",admin:"Usuários médicos"})[p];if(p==="checks")renderChecks();if(p==="history")renderHistory();if(p==="home")stats();if(p==="request")preview();if(p==="admin"&&isBpAdmin)loadAdminUsers()}
 function allExams(){return exams}
 function byId(id){return exams.find(x=>String(x.id)===String(id))}
 function search(query,target,list,add){let box=$(target);box.innerHTML="";if(fold(query).trim().length<2){box.innerHTML='<div class="empty compact">Digite ao menos 2 caracteres.</div>';return}let found=allExams().filter(x=>[x.name,x.mnemonic,x.code].some(v=>fold(v).includes(fold(query)))).slice(0,40);if(!found.length){box.innerHTML='<div class="empty compact">Nenhum exame encontrado.</div>';return}found.forEach(x=>{let row=document.createElement("div");row.className="resultrow";row.innerHTML='<div><strong>'+esc(x.name)+'</strong><small>'+esc(x.mnemonic||"—")+' · '+esc(x.code||"Sem código")+'</small></div>';let b=document.createElement("button");b.className="addbtn";b.textContent=list.includes(x.id)?"✓":"+";b.disabled=list.includes(x.id);b.onclick=()=>add(x.id);row.append(b);box.append(row)})}
@@ -39,7 +39,52 @@ async function loadProfile(){const {data}=await bpClient.from("requisicoes_perfi
 async function loadExams(){const {data,error}=await bpClient.from("requisicoes_exames").select("id,nome,mnemonico,codigo").order("nome").limit(10000);if(error)toast(error.message);exams=(data||[]).map(x=>({id:String(x.id),name:x.nome,mnemonic:x.mnemonico,code:x.codigo}));try{const r=await fetch("exames.json");if(r.ok){const a=await r.json();if(!exams.length)exams=a}}catch{}}
 function splitCSV(text){let out=[],line=[],field="",q=false;const sep=(text.split(/\r?\n/)[0]||"").includes(";")?";":",";for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'){if(q&&text[i+1]==='"'){field+='"';i++}else q=!q}else if(c===sep&&!q){line.push(field);field=""}else if((c==="\n"||c==="\r")&&!q){if(c==="\r"&&text[i+1]==="\n")i++;line.push(field);out.push(line);line=[];field=""}else field+=c}line.push(field);out.push(line);return out.filter(r=>r.some(c=>c.trim()))}
 async function importCSV(file){let txt=await file.text(),rows=splitCSV(txt),heads=rows.shift().map(fold),ni=heads.findIndex(h=>h.includes("procedimento")),mi=heads.findIndex(h=>h.includes("mnemonico")),ci=heads.findIndex(h=>h.includes("codigo"));if(ni<0||mi<0)return toast("Arquivo CSV sem as colunas Procedimento e Mnemônico.");const batch=rows.map((r,i)=>({codigo_base:("import-"+Date.now()+"-"+i),nome:(r[ni]||"").trim(),mnemonico:(r[mi]||"").trim(),codigo:ci>=0?(r[ci]||"").trim():""})).filter(x=>x.nome);const result=await bpClient.from("requisicoes_exames").insert(batch);if(result.error)return toast("Importação indisponível sem permissão administrativa. Solicite ao administrador.");await loadExams();stats();toast(batch.length+" exames importados.")}
-async function init(){user=await getActiveUser();if(!user)return;const logout=$("authLogout");if(logout)logout.onclick=async()=>{await bpClient.auth.signOut();location.reload()};for(const b of document.querySelectorAll("[data-view]"))b.onclick=()=>goto(b.dataset.view);for(const b of document.querySelectorAll("[data-go]"))b.onclick=()=>goto(b.dataset.go);$("heroNew").onclick=()=>goto("request");$("newCheck").onclick=()=>openModal();$("saveAsTemplate").onclick=()=>{if(!selected.length)return toast("Adicione exames.");openModal()};$("closeModal").onclick=$("cancelModal").onclick=()=>{$("modal").classList.add("hidden")};$("modalSearch").oninput=renderModalSearch;$("saveCheck").onclick=saveCheck;$("examSearch").oninput=renderSearch;$("applyTemplate").onclick=()=>{const c=checks.find(x=>x.id===$("requestTemplate").value);if(!c)return;selected=c.exames.map(x=>x.id);renderSelected();renderSearch();preview()};$("generatePdf").onclick=issue;$("openPreview").onclick=()=>printable(getData());$("clearRequest").onclick=()=>{if(!confirm("Limpar requisição?"))return;["patient","birth","notes","examSearch"].forEach(id=>$(id).value="");selected=[];renderSelected();renderSearch();preview()};document.querySelectorAll(".design-card").forEach(b=>b.onclick=()=>changeDesign(b.dataset.design));["patient","birth","reqDate","notes"].forEach(id=>$(id).addEventListener("input",preview));$("saveSettings").onclick=async()=>{const row={medico_id:user.id,nome:$("doctor").value.trim(),crm:$("crm").value.trim(),especialidade:$("specialty").value.trim(),clinica:$("clinic").value.trim()};const {error}=await bpClient.from("requisicoes_perfis").upsert(row);if(error)return toast(error.message);profile=row;preview();toast("Configurações salvas")};$("csvUpload").onchange=async e=>{if(e.target.files[0])await importCSV(e.target.files[0]);e.target.value=""};$("exportBackup").onclick=()=>{const a=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({checks,history,profile},null,2)],{type:"application/json"}));a.href=url;a.download="requisicoes-backup.json";a.click();URL.revokeObjectURL(url)};$("importBackup").onchange=()=>toast("Restauração precisa ser feita pelo administrador para preservar os dados existentes.");$("reqDate").value=today();await Promise.all([loadExams(),loadChecks(),loadHistory(),loadProfile()]);renderSelected();renderTemplates();stats();preview()}
+async function init(){user=await getActiveUser();if(!user)return;const logout=$("authLogout");if(logout)logout.onclick=async()=>{await bpClient.auth.signOut();location.reload()};for(const b of document.querySelectorAll("[data-view]"))b.onclick=()=>goto(b.dataset.view);for(const b of document.querySelectorAll("[data-go]"))b.onclick=()=>goto(b.dataset.go);$("heroNew").onclick=()=>goto("request");$("newCheck").onclick=()=>openModal();$("saveAsTemplate").onclick=()=>{if(!selected.length)return toast("Adicione exames.");openModal()};$("closeModal").onclick=$("cancelModal").onclick=()=>{$("modal").classList.add("hidden")};$("modalSearch").oninput=renderModalSearch;$("saveCheck").onclick=saveCheck;$("examSearch").oninput=renderSearch;$("applyTemplate").onclick=()=>{const c=checks.find(x=>x.id===$("requestTemplate").value);if(!c)return;selected=c.exames.map(x=>x.id);renderSelected();renderSearch();preview()};$("generatePdf").onclick=issue;$("openPreview").onclick=()=>printable(getData());$("clearRequest").onclick=()=>{if(!confirm("Limpar requisição?"))return;["patient","birth","notes","examSearch"].forEach(id=>$(id).value="");selected=[];renderSelected();renderSearch();preview()};document.querySelectorAll(".design-card").forEach(b=>b.onclick=()=>changeDesign(b.dataset.design));["patient","birth","reqDate","notes"].forEach(id=>$(id).addEventListener("input",preview));$("saveSettings").onclick=async()=>{const row={medico_id:user.id,nome:$("doctor").value.trim(),crm:$("crm").value.trim(),especialidade:$("specialty").value.trim(),clinica:$("clinic").value.trim()};const {error}=await bpClient.from("requisicoes_perfis").upsert(row);if(error)return toast(error.message);profile=row;preview();toast("Configurações salvas")};$("csvUpload").onchange=async e=>{if(e.target.files[0])await importCSV(e.target.files[0]);e.target.value=""};$("exportBackup").onclick=()=>{const a=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({checks,history,profile},null,2)],{type:"application/json"}));a.href=url;a.download="requisicoes-backup.json";a.click();URL.revokeObjectURL(url)};$("importBackup").onchange=()=>toast("Restauração precisa ser feita pelo administrador para preservar os dados existentes.");$("reqDate").value=today();await Promise.all([loadExams(),loadChecks(),loadHistory(),loadProfile(),setupAdmin()]);renderSelected();renderTemplates();stats();preview()}
+
+let isBpAdmin=false;
+async function adminCall(payload){
+ const {data,error}=await bpClient.functions.invoke("requisicoes-admin",{body:payload});
+ if(error)throw new Error(data?.error||error.message||"Erro ao acessar administração");
+ if(data?.error)throw new Error(data.error);
+ return data;
+}
+async function loadAdminUsers(){
+ const box=$("adminUsersList");box.textContent="Carregando usuários...";
+ try{
+ const data=await adminCall({action:"list"});box.replaceChildren();
+ if(!data.users.length){box.textContent="Nenhum usuário encontrado.";return}
+ data.users.forEach(u=>{
+ const row=document.createElement("div");row.className="historyrow";
+ const details=document.createElement("div");
+ const title=document.createElement("strong");title.textContent=u.nome||u.email||"Sem nome";
+ const sub=document.createElement("small");sub.textContent=[u.email,u.admin?"Administrador":u.ativo?"Ativo":"Desativado"].join(" · ");
+ details.append(title,sub);row.append(details);
+ if(!u.admin){
+ const btn=document.createElement("button");btn.className="outline small";
+ btn.textContent=u.ativo?"Desativar":"Ativar";
+ btn.onclick=async()=>{if(!confirm((u.ativo?"Desativar":"Ativar")+" o acesso de "+u.email+"?"))return;btn.disabled=true;try{await adminCall({action:"set_active",id:u.id,active:!u.ativo});await loadAdminUsers();toast("Acesso atualizado.")}catch(e){toast(e.message);btn.disabled=false}};
+ row.append(btn)
+ }
+ box.append(row);
+ })
+ }catch(e){box.textContent="Erro: "+e.message}
+}
+async function setupAdmin(){
+ const {data,error}=await bpClient.from("requisicoes_admins").select("user_id").eq("user_id",user.id).maybeSingle();
+ if(error||!data)return;
+ isBpAdmin=true;$("adminNav").hidden=false;
+ $("adminRefresh").onclick=loadAdminUsers;
+ $("adminCreateForm").onsubmit=async event=>{
+ event.preventDefault();const form=event.currentTarget;
+ const submit=form.querySelector('button[type="submit"]');
+ const body=Object.fromEntries(new FormData(form).entries());
+ submit.disabled=true;
+ try{await adminCall({action:"create",...body});form.reset();toast("Usuário criado com sucesso.");await loadAdminUsers()}
+ catch(e){toast("Não foi possível criar: "+e.message)}
+ finally{submit.disabled=false}
+ };
+}
+
 let bpAppInitialized=false;
 window.addEventListener("bp:authorized",()=>{
  if(bpAppInitialized)return;
