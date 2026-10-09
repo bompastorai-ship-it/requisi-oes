@@ -15,14 +15,17 @@ document.getElementById('authForm').onsubmit=async e=>{
   const status=document.getElementById('authError');
   const emailField=document.getElementById('authEmail');
   const passwordField=document.getElementById('authPassword');
+  // Force browser autofill state to sync before reading the submitted values.
   emailField.focus();
   emailField.blur();
-  const typedEmail=String(emailField.value||emailField.getAttribute('value')||'');
-  const formEmail=String(new FormData(e.currentTarget).get('email')||'');
-  const email=(typedEmail||formEmail).trim().toLowerCase();
-  const password=String(passwordField.value||'');
+  passwordField.focus();
+  passwordField.blur();
+  await new Promise(resolve=>setTimeout(resolve,80));
+  const submitted=new FormData(e.currentTarget);
+  const email=String(emailField.value||submitted.get('email')||'').trim().toLowerCase();
+  const password=String(passwordField.value||submitted.get('password')||'');
   if(!email){status.textContent='O navegador exibiu um e-mail, mas não o enviou ao formulário. Clique no campo, apague e digite o e-mail manualmente.';emailField.focus();return}
-  if(!password){status.textContent='Informe a senha.';passwordField.focus();return}
+  if(!password){status.textContent='O navegador mostra uma senha, mas não a disponibilizou ao formulário. Apague o campo e digite a senha manualmente.';passwordField.focus();return}
   status.textContent='Autenticando...';
   try{
     const result=await bpClient.auth.signInWithPassword({email:email,password:password});
