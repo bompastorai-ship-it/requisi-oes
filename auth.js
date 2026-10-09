@@ -13,17 +13,12 @@ const css=document.createElement('style');css.textContent='#authGateway{position
 document.getElementById('authForm').onsubmit=async e=>{
   e.preventDefault();
   const status=document.getElementById('authError');
-  const emailField=document.getElementById('authEmail');
-  const passwordField=document.getElementById('authPassword');
+  const emailField=e.currentTarget.elements.namedItem('email');
+  const passwordField=e.currentTarget.elements.namedItem('password');
   // Force browser autofill state to sync before reading the submitted values.
-  emailField.focus();
-  emailField.blur();
-  passwordField.focus();
-  passwordField.blur();
-  await new Promise(resolve=>setTimeout(resolve,80));
   const submitted=new FormData(e.currentTarget);
-  const email=String(emailField.value||submitted.get('email')||'').trim().toLowerCase();
-  const password=String(passwordField.value||submitted.get('password')||'');
+  const email=String(submitted.get('email')||emailField.value||'').trim().toLowerCase();
+  const password=String(submitted.get('password')||passwordField.value||'');
   if(!email){status.textContent='O navegador exibiu um e-mail, mas não o enviou ao formulário. Clique no campo, apague e digite o e-mail manualmente.';emailField.focus();return}
   if(!password){status.textContent='O navegador mostra uma senha, mas não a disponibilizou ao formulário. Apague o campo e digite a senha manualmente.';passwordField.focus();return}
   status.textContent='Autenticando...';
