@@ -44,7 +44,14 @@ async function init(){user=await getActiveUser();if(!user)return;const logout=$(
 let isBpAdmin=false;
 async function adminCall(payload){
  const {data,error}=await bpClient.functions.invoke("requisicoes-admin",{body:payload});
- if(error)throw new Error(data?.error||error.message||"Erro ao acessar administração");
+ if(error){
+  let message=error.message||"Falha na conexão com a função administrativa";
+  if(error.context){
+   try{const detail=await error.context.clone().json();message=detail.error||detail.message||message}catch{}
+   if(error.context.status)message+=" (HTTP "+error.context.status+")";
+  }
+  throw new Error(message);
+ }
  if(data?.error)throw new Error(data.error);
  return data;
 }
